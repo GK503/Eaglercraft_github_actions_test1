@@ -1,17 +1,9 @@
-name: Java CI
-
-on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
-
 jobs:
-  build:
+  run-server:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -19,7 +11,35 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: maven
 
-      - name: Build with Maven
-        run: mvn -B package --file pom.xml
+      - name: Install rclone
+        run: sudo apt-get update && sudo apt-get install -y rclone
+
+      - name: Configure Google Drive
+        run: rclone config create gdrive drive service_account_file=/path/to/service-account.json
+
+      - name: Start Eaglercraft server with periodic sync
+        run: |
+          java -jar EaglercraftServer.jar &
+          SERVER_PID=$!
+
+          # Periodic sync every 10 minutes
+          (
+            while true; do
+              sleep 600
+              echo "Syncing server files to Google Drive..."
+              rclone copy server_data gdrive:my-eaglercraft-server -P
+            done
+          ) &
+          SYNC_PID=$!
+
+          # Final timer (5 hours 40 minutes)
+          sleep 20400
+
+          # Final sync before shutdown
+          echo "Final sync..."
+          rclone copy server_data gdrive:my-eaglercraft-server -P
+
+          # Stop background processes
+          kill $SERVER_PID
+          kill $SYNC_PID
